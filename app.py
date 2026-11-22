@@ -143,4 +143,74 @@ sns.heatmap(
 )
 ax1.set_xlabel("")
 ax1.set_ylabel("")
-plt.
+plt.xticks(rotation=20, ha="right", fontsize=10)
+plt.yticks(fontsize=10)
+st.pyplot(fig1, use_container_width=True)
+
+st.divider()
+
+# 8. 차트 2 & 3: 크기/비율 완전 통일 (6.5 x 4.5, constrained_layout)
+left_col, right_col = st.columns(2)
+
+with left_col:
+    st.subheader("2. 회수 등급별 사유 비중 (%)")
+    st.caption("1등급(최고위해)과 3등급(일반위해)의 원인 구조 차이를 비교합니다.")
+
+    grade_order = [g for g in ["1등급", "2등급", "3등급"] if g in filtered["RTRVL_GRDCD_NM"].unique()]
+    if grade_order:
+        ct_grade = pd.crosstab(
+            filtered[filtered["RTRVL_GRDCD_NM"].isin(grade_order)]["RTRVL_GRDCD_NM"],
+            filtered[filtered["RTRVL_GRDCD_NM"].isin(grade_order)]["REASON_CAT"],
+            normalize="index"
+        ).loc[grade_order] * 100
+
+        fig2, ax2 = plt.subplots(figsize=(6.5, 4.5), constrained_layout=True)
+        ct_grade.plot(kind="barh", stacked=True, colormap="tab10", width=0.55, ax=ax2)
+
+        # 막대 내부에 10% 이상 항목 퍼센트 표시
+        for container in ax2.containers:
+            labels = [f"{v.get_width():.0f}%" if v.get_width() >= 10 else "" for v in container]
+            ax2.bar_label(container, labels=labels, label_type="center", color="white", fontsize=9, fontweight="bold")
+
+        ax2.set_xlim(0, 100)
+        ax2.set_xlabel("비중 (%)")
+        ax2.set_ylabel("")
+        ax2.invert_yaxis()  # 1등급이 맨 위로 오게
+        ax2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, frameon=False, fontsize=8.5)
+        st.pyplot(fig2, use_container_width=True)
+    else:
+        st.info("1~3등급 데이터를 선택하면 등급별 비중 차트가 표시됩니다.")
+
+with right_col:
+    st.subheader("3. 1등급(최고위해) 회수 원인 순위")
+    st.caption("생명·건강 위해도가 가장 높은 1등급 회수 건의 실제 원인 분포입니다.")
+
+    if not grade1_df.empty:
+        g1_counts = grade1_df["REASON_CAT"].value_counts()
+        fig3, ax3 = plt.subplots(figsize=(6.5, 4.5), constrained_layout=True)
+        sns.barplot(x=g1_counts.values, y=g1_counts.index, color="#D9534F", ax=ax3)
+        ax3.set_xlabel("1등급 회수 건수 (건)")
+        ax3.set_ylabel("")
+        ax3.set_xlim(0, g1_counts.max() * 1.18)
+        for i, v in enumerate(g1_counts.values):
+            pct = v / len(grade1_df) * 100
+            ax3.text(v + 0.8, i, f"{v}건 ({pct:.1f}%)", va="center", fontsize=9.5, fontweight="bold")
+        st.pyplot(fig3, use_container_width=True)
+    else:
+        st.info("사이드바에서 '1등급'을 포함하면 1등급 원인 순위가 표시됩니다.")
+
+# 9. 한계점 및 원본 데이터
+st.divider()
+with st.expander("데이터 해석 시 유의사항 및 한계점"):
+    st.markdown("""
+    - **기간 편중:** 공개 API 데이터는 최근 2년(2025~2026년) 공고가 전체의 72% 이상을 차지하며 과거 연도 공고는 일부 누락되어 있어, 시계열·계절성 일반화에는 한계가 있습니다.
+    - **분류 기준:** 서술형 텍스트(`RTRVLPRVNS`)를 핵심 키워드 기반 7개 범주로 재분류했으며, 복합 사유가 기재된 경우 대표 사유 1개로 집계했습니다.
+    """)
+
+with st.expander("필터링된 상세 데이터 보기"):
+    show_cols = ["CRET_DTM", "RTRVL_GRDCD_NM", "PRDLST_TYPE", "PRDTNM", "REASON_CAT", "RTRVLPRVNS", "BSSHNM"]
+    st.dataframe(filtered[show_cols].rename(columns={
+        "CRET_DTM": "등록일시", "RTRVL_GRDCD_NM": "회수등급", "PRDLST_TYPE": "식품유형",
+        "PRDTNM": "제품명", "REASON_CAT": "사유분류", "RTRVLPRVNS": "원본회수사유",
+        "BSSHNM": "업체명"
+    }), use_container_width=True)
