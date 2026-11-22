@@ -109,18 +109,18 @@ if not grade1_df.empty:
 else:
     col4.metric("1등급 1위 원인", "해당 없음")
 
-# 핵심 결론 박스 (한눈에 결과 파악)
+# 핵심 결론 박스 (마크다운 깨짐 수정)
 if not grade1_df.empty:
     st.info(
         f"**핵심 분석 결과 ({year_range[0]}~{year_range[1]}년, {total_cnt:,}건 기준):** "
         f"① 식품 유형마다 주된 위해 요인이 뚜렷하게 다릅니다(예: 농산물→잔류농약, 축산물→미생물, 건강기능식품→품질·함량). "
-        f"② 대중의 통념과 달리 가장 위험한 **1등급 회수({grade1_cnt}건)**의 최대 원인은 식중독균이 아니라 "
-        f"**'{g1_top}'({g1_top_pct:.1f}%)**입니다."
+        f"② 대중의 통념과 달리 가장 위험한 **1등급 회수** ({grade1_cnt}건)의 최대 원인은 식중독균이 아니라 "
+        f"**{g1_top}** ({g1_top_pct:.1f}%)입니다."
     )
 
 st.divider()
 
-# 7. 차트 1: 식품유형 x 회수사유 비율(%) 히트맵 (전체 폭)
+# 7. 차트 1: 식품유형 x 회수사유 비율(%) 히트맵 (높이를 컴팩트하게 조정)
 st.subheader("1. 식품 유형별 위해 요인 구조 (유형 내 비중 %)")
 st.caption("각 식품 유형의 합을 100%로 정규화하여, 유형별로 어떤 사고가 집중되는지 비교합니다.")
 
@@ -129,27 +129,26 @@ sub_df = filtered[filtered["PRDLST_TYPE"].isin(top_n_types)]
 ct_pct = pd.crosstab(sub_df["PRDLST_TYPE"], sub_df["REASON_CAT"], normalize="index").loc[top_n_types] * 100
 ct_cnt = pd.crosstab(sub_df["PRDLST_TYPE"], sub_df["REASON_CAT"]).loc[top_n_types]
 
-# 셀 라벨: "78%\n(29)" 형식
 annot_labels = ct_pct.copy().astype(str)
 for r in ct_pct.index:
     for c in ct_pct.columns:
         p, cnt = ct_pct.loc[r, c], ct_cnt.loc[r, c]
         annot_labels.loc[r, c] = f"{p:.0f}%\n({cnt})" if cnt > 0 else ""
 
-fig1, ax1 = plt.subplots(figsize=(11, 4.2), constrained_layout=True)
+fig1, ax1 = plt.subplots(figsize=(11, 3.6), constrained_layout=True)
 sns.heatmap(
     ct_pct, annot=annot_labels, fmt="", cmap="YlOrRd",
     linewidths=0.6, vmin=0, vmax=85, cbar_kws={"label": "유형 내 비중 (%)"}, ax=ax1
 )
 ax1.set_xlabel("")
 ax1.set_ylabel("")
-plt.xticks(rotation=20, ha="right", fontsize=10)
-plt.yticks(fontsize=10)
+plt.xticks(rotation=15, ha="right", fontsize=9.5)
+plt.yticks(fontsize=9.5)
 st.pyplot(fig1, use_container_width=True)
 
 st.divider()
 
-# 8. 차트 2 & 3: 크기/비율 완전 통일 (6.5 x 4.5, constrained_layout)
+# 8. 차트 2 & 3: 그래프 박스 높이와 여백을 동일하게 고정
 left_col, right_col = st.columns(2)
 
 with left_col:
@@ -164,10 +163,9 @@ with left_col:
             normalize="index"
         ).loc[grade_order] * 100
 
-        fig2, ax2 = plt.subplots(figsize=(6.5, 4.5), constrained_layout=True)
+        fig2, ax2 = plt.subplots(figsize=(6.5, 4.2))
         ct_grade.plot(kind="barh", stacked=True, colormap="tab10", width=0.55, ax=ax2)
 
-        # 막대 내부에 10% 이상 항목 퍼센트 표시
         for container in ax2.containers:
             labels = [f"{v.get_width():.0f}%" if v.get_width() >= 10 else "" for v in container]
             ax2.bar_label(container, labels=labels, label_type="center", color="white", fontsize=9, fontweight="bold")
@@ -175,8 +173,9 @@ with left_col:
         ax2.set_xlim(0, 100)
         ax2.set_xlabel("비중 (%)")
         ax2.set_ylabel("")
-        ax2.invert_yaxis()  # 1등급이 맨 위로 오게
-        ax2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.18), ncol=3, frameon=False, fontsize=8.5)
+        ax2.invert_yaxis()
+        ax2.legend(loc="upper center", bbox_to_anchor=(0.5, -0.22), ncol=3, frameon=False, fontsize=8.5)
+        fig2.subplots_adjust(left=0.14, right=0.96, top=0.95, bottom=0.28)
         st.pyplot(fig2, use_container_width=True)
     else:
         st.info("1~3등급 데이터를 선택하면 등급별 비중 차트가 표시됩니다.")
@@ -187,30 +186,17 @@ with right_col:
 
     if not grade1_df.empty:
         g1_counts = grade1_df["REASON_CAT"].value_counts()
-        fig3, ax3 = plt.subplots(figsize=(6.5, 4.5), constrained_layout=True)
+        fig3, ax3 = plt.subplots(figsize=(6.5, 4.2))
         sns.barplot(x=g1_counts.values, y=g1_counts.index, color="#D9534F", ax=ax3)
         ax3.set_xlabel("1등급 회수 건수 (건)")
         ax3.set_ylabel("")
-        ax3.set_xlim(0, g1_counts.max() * 1.18)
+        ax3.set_xlim(0, g1_counts.max() * 1.32)
         for i, v in enumerate(g1_counts.values):
             pct = v / len(grade1_df) * 100
-            ax3.text(v + 0.8, i, f"{v}건 ({pct:.1f}%)", va="center", fontsize=9.5, fontweight="bold")
+            ax3.text(v + 0.8, i, f"{v}건 ({pct:.1f}%)", va="center", fontsize=9, fontweight="bold")
+        fig3.subplots_adjust(left=0.28, right=0.96, top=0.95, bottom=0.28)
         st.pyplot(fig3, use_container_width=True)
     else:
         st.info("사이드바에서 '1등급'을 포함하면 1등급 원인 순위가 표시됩니다.")
 
 # 9. 한계점 및 원본 데이터
-st.divider()
-with st.expander("데이터 해석 시 유의사항 및 한계점"):
-    st.markdown("""
-    - **기간 편중:** 공개 API 데이터는 최근 2년(2025~2026년) 공고가 전체의 72% 이상을 차지하며 과거 연도 공고는 일부 누락되어 있어, 시계열·계절성 일반화에는 한계가 있습니다.
-    - **분류 기준:** 서술형 텍스트(`RTRVLPRVNS`)를 핵심 키워드 기반 7개 범주로 재분류했으며, 복합 사유가 기재된 경우 대표 사유 1개로 집계했습니다.
-    """)
-
-with st.expander("필터링된 상세 데이터 보기"):
-    show_cols = ["CRET_DTM", "RTRVL_GRDCD_NM", "PRDLST_TYPE", "PRDTNM", "REASON_CAT", "RTRVLPRVNS", "BSSHNM"]
-    st.dataframe(filtered[show_cols].rename(columns={
-        "CRET_DTM": "등록일시", "RTRVL_GRDCD_NM": "회수등급", "PRDLST_TYPE": "식품유형",
-        "PRDTNM": "제품명", "REASON_CAT": "사유분류", "RTRVLPRVNS": "원본회수사유",
-        "BSSHNM": "업체명"
-    }), use_container_width=True)
