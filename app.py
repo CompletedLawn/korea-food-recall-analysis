@@ -7,11 +7,11 @@ import seaborn as sns
 
 # 1. 페이지 설정
 st.set_page_config(
-    page_title="국내 식품 회수·판매중지 위해 요인 분석",
+    page_title="What Triggers a Class 1 Food Recall?",
     layout="wide"
 )
 
-# 2. 한글 폰트 설정 (로컬 Windows/Mac 및 Streamlit Cloud Linux 모두 대응)
+# 2. 한글 폰트 설정
 def set_korean_font():
     font_candidates = [
         "/usr/share/fonts/truetype/nanum/NanumGothic.ttf",  # Streamlit Cloud (Linux)
@@ -35,7 +35,6 @@ def load_data(filepath="I0490.csv"):
 
     df["CRET_DT"] = pd.to_datetime(df["CRET_DTM"], errors="coerce")
     df["YEAR"] = df["CRET_DT"].dt.year
-    df["YM"] = df["CRET_DT"].dt.to_period("M").astype(str)
 
     df["PRDLST_TYPE"] = df["PRDLST_TYPE"].fillna("미분류(무등록 등)")
     df["RTRVL_GRDCD_NM"] = df["RTRVL_GRDCD_NM"].fillna("등급미상")
@@ -59,22 +58,6 @@ def load_data(filepath="I0490.csv"):
         return "기타"
 
     df["REASON_CAT"] = df["RTRVLPRVNS"].apply(classify_reason)
-
-    sido_map = {
-        "서울": "서울특별시", "서울시": "서울특별시",
-        "경북": "경상북도", "경남": "경상남도",
-        "울산": "울산광역시", "인천": "인천광역시",
-        "강원": "강원특별자치도", "전남광주통합특별시": "전남·광주"
-    }
-    def clean_sido(addr):
-        if pd.isna(addr):
-            return "미상"
-        first = str(addr).split()[0]
-        if first.startswith("경남"):
-            return "경상남도"
-        return sido_map.get(first, first)
-
-    df["SIDO"] = df["ADDR"].apply(clean_sido)
     return df
 
 df = load_data()
@@ -92,103 +75,72 @@ selected_grades = st.sidebar.multiselect("회수 등급", available_grades, defa
 all_types = df["PRDLST_TYPE"].value_counts().index.tolist()
 selected_types = st.sidebar.multiselect("식품 유형", all_types, default=all_types)
 
-# 필터 적용
 filtered = df[
     (df["YEAR"].between(year_range[0], year_range[1])) &
     (df["RTRVL_GRDCD_NM"].isin(selected_grades)) &
     (df["PRDLST_TYPE"].isin(selected_types))
 ]
 
-# 5. 헤더 및 핵심 KPI
-st.title("국내 식품 회수·판매중지 위해 요인 분석")
-st.markdown(
-    "**핵심 질문:** 국내 식품 회수·판매중지 원인은 **식품 유형**에 따라 어떻게 다르며, "
-    "가장 위험한 **1등급 회수**는 실제로 어떤 원인에서 발생하는가?"
-)
-st.caption("출처: 식품의약품안전처 식품안전나라 Open API (I0490, 식품의 회수 및 판매중지 정보) | 집계 기준: 공고 등록일(CRET_DTM)")
+# 5. 헤더
+st.title("What Triggers a Class 1 Food Recall?")
+st.markdown("##### 식품 유형 및 회수 등급별 국내 식품 위해 요인 분석")
+st.caption("출처: 식품의약품안전처 식품안전나라 Open API (I0490) | 집계 기준: 공고 등록일(CRET_DTM)")
 
 if filtered.empty:
     st.warning("선택한 조건에 해당하는 데이터가 없습니다. 사이드바 필터를 조정해 주세요.")
     st.stop()
 
-col1, col2, col3, col4 = st.columns(4)
+# 6. 핵심 KPI + 동적 결론 요약 박스
 total_cnt = len(filtered)
-grade1_cnt = (filtered["RTRVL_GRDCD_NM"] == "1등급").sum()
+grade1_df = filtered[filtered["RTRVL_GRDCD_NM"] == "1등급"]
+grade1_cnt = len(grade1_df)
 grade1_ratio = (grade1_cnt / total_cnt * 100) if total_cnt > 0 else 0
 top_reason = filtered["REASON_CAT"].value_counts().index[0]
-top_type = filtered["PRDLST_TYPE"].value_counts().index[0]
+top_reason_pct = filtered["REASON_CAT"].value_counts(normalize=True).iloc[0] * 100
 
-col1.metric("선택 조건 회수 건수", f"{total_cnt:,}건")
+col1, col2, col3, col4 = st.columns(4)
+col1.metric("선택 조건 총 회수 건수", f"{total_cnt:,}건")
 col2.metric("1등급(최고위해) 비중", f"{grade1_ratio:.1f}%", f"{grade1_cnt}건")
-col3.metric("최다 회수 사유", top_reason)
-col4.metric("최다 회수 식품유형", top_type)
+col3.metric("전체 1위 회수 사유", top_reason, f"{top_reason_pct:.1f}%")
+if not grade1_df.empty:
+    g1_top = grade1_df["REASON_CAT"].value_counts().index[0]
+    g1_top_pct = grade1_df["REASON_CAT"].value_counts(normalize=True).iloc[0] * 100
+    col4.metric("1등급 1위 원인", g1_top, f"1등급 중 {g1_top_pct:.1f}%")
+else:
+    col4.metric("1등급 1위 원인", "해당 없음")
+
+# 핵심 결론 박스 (한눈에 결과 파악)
+if not grade1_df.empty:
+    st.info(
+        f"**핵심 분석 결과 ({year_range[0]}~{year_range[1]}년, {total_cnt:,}건 기준):** "
+        f"① 식품 유형마다 주된 위해 요인이 뚜렷하게 다릅니다(예: 농산물→잔류농약, 축산물→미생물, 건강기능식품→품질·함량). "
+        f"② 대중의 통념과 달리 가장 위험한 **1등급 회수({grade1_cnt}건)**의 최대 원인은 식중독균이 아니라 "
+        f"**'{g1_top}'({g1_top_pct:.1f}%)**입니다."
+    )
 
 st.divider()
 
-# 6. 차트 1: 식품유형 x 회수사유 히트맵 (Seaborn)
-st.subheader("1. 식품 유형별 주요 회수 사유 구조 (Heatmap)")
+# 7. 차트 1: 식품유형 x 회수사유 비율(%) 히트맵 (전체 폭)
+st.subheader("1. 식품 유형별 위해 요인 구조 (유형 내 비중 %)")
+st.caption("각 식품 유형의 합을 100%로 정규화하여, 유형별로 어떤 사고가 집중되는지 비교합니다.")
+
 top_n_types = filtered["PRDLST_TYPE"].value_counts().head(7).index
-ct_type = pd.crosstab(
-    filtered[filtered["PRDLST_TYPE"].isin(top_n_types)]["PRDLST_TYPE"],
-    filtered[filtered["PRDLST_TYPE"].isin(top_n_types)]["REASON_CAT"]
-).loc[top_n_types]
+sub_df = filtered[filtered["PRDLST_TYPE"].isin(top_n_types)]
+ct_pct = pd.crosstab(sub_df["PRDLST_TYPE"], sub_df["REASON_CAT"], normalize="index").loc[top_n_types] * 100
+ct_cnt = pd.crosstab(sub_df["PRDLST_TYPE"], sub_df["REASON_CAT"]).loc[top_n_types]
 
-fig1, ax1 = plt.subplots(figsize=(10, 4.5))
-sns.heatmap(ct_type, annot=True, fmt="d", cmap="YlOrRd", linewidths=0.5, ax=ax1)
-ax1.set_xlabel("회수 사유 카테고리")
-ax1.set_ylabel("식품 유형 (상위 7개)")
-plt.xticks(rotation=25, ha="right")
-plt.tight_layout()
-st.pyplot(fig1)
+# 셀 라벨: "78%\n(29)" 형식
+annot_labels = ct_pct.copy().astype(str)
+for r in ct_pct.index:
+    for c in ct_pct.columns:
+        p, cnt = ct_pct.loc[r, c], ct_cnt.loc[r, c]
+        annot_labels.loc[r, c] = f"{p:.0f}%\n({cnt})" if cnt > 0 else ""
 
-# 7. 차트 2 & 3 나란히 배치
-left_col, right_col = st.columns(2)
-
-with left_col:
-    st.subheader("2. 회수 등급별 사유 비중 (Stacked Bar)")
-    grade_order = [g for g in ["1등급", "2등급", "3등급"] if g in filtered["RTRVL_GRDCD_NM"].unique()]
-    if grade_order:
-        ct_grade = pd.crosstab(
-            filtered[filtered["RTRVL_GRDCD_NM"].isin(grade_order)]["RTRVL_GRDCD_NM"],
-            filtered[filtered["RTRVL_GRDCD_NM"].isin(grade_order)]["REASON_CAT"],
-            normalize="index"
-        ).loc[grade_order] * 100
-
-        fig2, ax2 = plt.subplots(figsize=(6.5, 4.5))
-        ct_grade.plot(kind="bar", stacked=True, colormap="tab10", ax=ax2)
-        ax2.set_ylabel("비중 (%)")
-        ax2.set_xlabel("회수 등급")
-        ax2.set_xticklabels(ax2.get_xticklabels(), rotation=0)
-        ax2.legend(title="회수 사유", bbox_to_anchor=(1.02, 1), loc="upper left", fontsize=8)
-        plt.tight_layout()
-        st.pyplot(fig2)
-    else:
-        st.info("1~3등급 데이터를 선택하면 등급별 비중 차트가 표시됩니다.")
-
-with right_col:
-    st.subheader("3. 제조·판매업체 지역별 회수 건수 Top 10")
-    sido_counts = filtered["SIDO"].value_counts().head(10)
-    fig3, ax3 = plt.subplots(figsize=(6.5, 4.5))
-    sns.barplot(x=sido_counts.values, y=sido_counts.index, palette="Blues_r", ax=ax3)
-    ax3.set_xlabel("회수 건수")
-    ax3.set_ylabel("시도")
-    for i, v in enumerate(sido_counts.values):
-        ax3.text(v + 0.5, i, str(v), va="center", fontsize=9)
-    plt.tight_layout()
-    st.pyplot(fig3)
-
-# 8. 데이터 한계 및 원본 테이블 확인
-st.divider()
-with st.expander("데이터 해석 시 유의사항 및 한계점"):
-    st.markdown("""
-    - **기간 편중:** 공개 API 데이터는 최근 2년(2025~2026년) 공고가 전체의 72% 이상을 차지하며, 과거 연도 데이터는 일부 누락되어 있어 연도별·계절별 추세 일반화에는 한계가 있습니다.
-    - **분류 기준:** 서술형 텍스트(`RTRVLPRVNS`)를 핵심 키워드 기반으로 7개 범주로 재분류했으며, 복합 사유가 기재된 경우 우선순위에 따라 대표 사유 1개로 집계했습니다.
-    """)
-
-with st.expander("필터링된 상세 데이터 보기"):
-    show_cols = ["CRET_DTM", "RTRVL_GRDCD_NM", "PRDLST_TYPE", "PRDTNM", "REASON_CAT", "RTRVLPRVNS", "BSSHNM", "SIDO"]
-    st.dataframe(filtered[show_cols].rename(columns={
-        "CRET_DTM": "등록일시", "RTRVL_GRDCD_NM": "회수등급", "PRDLST_TYPE": "식품유형",
-        "PRDTNM": "제품명", "REASON_CAT": "사유분류", "RTRVLPRVNS": "원본회수사유",
-        "BSSHNM": "업체명", "SIDO": "지역"
-    }), use_container_width=True)
+fig1, ax1 = plt.subplots(figsize=(11, 4.2), constrained_layout=True)
+sns.heatmap(
+    ct_pct, annot=annot_labels, fmt="", cmap="YlOrRd",
+    linewidths=0.6, vmin=0, vmax=85, cbar_kws={"label": "유형 내 비중 (%)"}, ax=ax1
+)
+ax1.set_xlabel("")
+ax1.set_ylabel("")
+plt.
